@@ -104,6 +104,7 @@
       </li>
       <li>
         <b>Open the add-ins page:</b> go to <a href="https://aka.ms/olksideload">aka.ms/olksideload</a>. Outlook on the web opens, and after a few seconds the <b>Add-Ins for Outlook</b> window appears.
+        <p class="note">If it only opens your inbox, Microsoft's add-ins page is having a known problem. Try again in a few days, or ask IT to add Versatex Email Style for you (see <a href="#it">For IT</a> below).</p>
       </li>
       <li>
         Select <span class="path">My add-ins</span>, scroll to <span class="path">Custom Addins</span> at the bottom, then
@@ -141,8 +142,19 @@
       <li>Works in <b>Outlook on the web</b> and <b>New Outlook for Windows</b>. Emails sent from the Outlook phone app go out unstyled.</li>
       <li>Recipients don't need anything installed: the styling is part of the email, and it holds up in classic Outlook and on phones.</li>
       <li>Your quoted thread is never changed; only the part you wrote.</li>
-      <li>To remove it, open <a href="https://aka.ms/olksideload">aka.ms/olksideload</a>, go to <span class="path">My add-ins<span>&rsaquo;</span>Custom Addins</span>, choose <b>&hellip;</b> next to Versatex Email Style, then <b>Remove</b>.</li>
+      <li><b>Updates are automatic.</b> Outlook loads the latest version every time, so you never reinstall for a new version. The version shows at the top of Versatex settings.</li>
+      <li>Installed it before 17 November? Nothing to do for now: your copy gets the same updates.</li>
+      <li>To remove it, in Outlook on the web select <span class="path">More apps</span> in the left bar, then <span class="path">Add apps<span>&rsaquo;</span>Manage your apps</span>, choose <b>&hellip;</b> next to Versatex Email Style, then <b>Remove</b>.</li>
     </ul>
+
+    <h2 id="it">For IT: deploy it centrally</h2>
+    <p>Microsoft supports add-ins that act on Send when IT deploys them, and nobody has to install anything themselves.</p>
+    <ol class="steps">
+      <li>In the <a href="https://admin.microsoft.com">Microsoft 365 admin center</a>, go to <span class="path">Settings<span>&rsaquo;</span>Integrated apps</span>, select <b>Add-ins</b> near the top, then <b>Deploy Add-in</b> and <b>Next</b>.</li>
+      <li>Choose to upload a custom add-in, pick the URL option, enter <code>https://versatex-tools.github.io/vstx-email-style/manifest.xml</code> and select <b>Upload</b>.</li>
+      <li>Choose <b>Everyone</b>, <b>Specific users/groups</b> or <b>Just me</b>, then <b>Deploy</b>. It can take 24 to 72 hours to appear in Outlook.</li>
+    </ol>
+    <p class="note">People who installed it themselves: if Versatex Email Style then appears twice under Manage your apps, remove the one marked Custom app.</p>
   </main>
 
   <footer>Versatex Email Style &middot; built by Analytics &amp; AI Solutions</footer>
