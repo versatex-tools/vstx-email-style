@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Versatex settings</title>
+  <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script type="text/javascript">var VSTX_SETTINGS_PANE = true;</script>
+  <script type="text/javascript" id="engine" src="launchevent.js?v=34"></script>
+  <style>
+    @font-face { font-family: "Roboto"; font-weight: 400; src: url("fonts/roboto-latin-400-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Roboto"; font-weight: 700; src: url("fonts/roboto-latin-700-normal.woff2") format("woff2"); }
+
+    :root {
+      --ink: #231f20;
+      --yellow: #fdc00f;
+      --bg: #ffffff;
+      --text: #231f20;
+      --muted: #58595b;
+      --line: #e6e7e8;
+      --field-line: #d3d2d2;
+      --field: #ffffff;
+      --surface: #f4f4f4;
+      --primary: #231f20;
+      --primary-text: #ffffff;
+      --primary-hover: #58595b;
+      --switch-off: #a7a9ac;
+      --switch-on: #231f20;
+      --switch-knob: #ffffff;
+      --toast: #231f20;
+      --toast-text: #ffffff;
+      --radius: 6px;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #1c1b1b; --text: #f1f1f1; --muted: #b9babc; --line: #353334; --field-line: #4a4849; --field: #262425;
+        --surface: #2a2829; --primary: #fdc00f; --primary-text: #231f20; --primary-hover: #ffd34d;
+        --switch-off: #58595b; --switch-on: #fdc00f; --switch-knob: #231f20; --toast: #f1f1f1; --toast-text: #231f20;
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #1c1b1b; --text: #f1f1f1; --muted: #b9babc; --line: #353334; --field-line: #4a4849; --field: #262425;
+      --surface: #2a2829; --primary: #fdc00f; --primary-text: #231f20; --primary-hover: #ffd34d;
+      --switch-off: #58595b; --switch-on: #fdc00f; --switch-knob: #231f20; --toast: #f1f1f1; --toast-text: #231f20;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 400 14px/1.5 Roboto, "Segoe UI", Arial, sans-serif; }
+
+    .top { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+    .band { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--ink); padding: 14px 16px; margin-bottom: 4px; }
+    .band::after { content: ""; position: absolute; left: 9%; right: 0; bottom: -4px; height: 4px; background: var(--yellow); }
+    .band img { display: block; height: 24px; width: auto; }
+    .active-pill {
+      display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px;
+      color: #d3d2d2; font-size: 11px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+    }
+    .active-pill .marker { color: var(--yellow); font-family: "Segoe UI Symbol", Arial, sans-serif; font-size: 10px; }
+
+    .tabs { display: flex; border-bottom: 1px solid var(--line); padding: 0 8px; }
+    .tab {
+      position: relative; flex: 1; padding: 12px 4px 11px; border: 0; background: none; cursor: pointer;
+      font: 700 13px Roboto, "Segoe UI", Arial, sans-serif; color: var(--muted);
+    }
+    .tab[aria-selected="true"] { color: var(--text); }
+    .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -1px; height: 2px; border-radius: 2px; background: var(--text); }
+    .tab:hover { color: var(--text); }
+    .tab:focus-visible { outline: 2px solid var(--text); outline-offset: -4px; border-radius: var(--radius); }
+
+    main { padding: 20px 16px 88px; }
+    h1 { margin: 0 0 4px; font-size: 18px; font-weight: 700; line-height: 1.3; }
+    .lead { margin: 0 0 4px; color: var(--muted); }
+    h2 { margin: 28px 0 4px; font-size: 15px; font-weight: 700; }
+    h2::before { content: ""; display: block; width: 24px; height: 3px; margin-bottom: 8px; background: var(--yellow); }
+
+    .field-label { display: block; margin: 16px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    input:not(.switch) {
+      width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--field-line); border-radius: var(--radius);
+      font: inherit; color: var(--text); background: var(--field);
+    }
+    input:not(.switch):focus-visible { outline: 2px solid var(--text); outline-offset: 0; border-color: var(--text); }
+
+    .paper { background: #ffffff; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    /* Scaling leaves hairline seams between the signature's cells; the panel colour behind them hides those. */
+    .preview-scale { background: #f4f4f4; }
+    .preview-scale > table > tbody > tr:first-child { display: none; }
+    .preview-short { padding: 10px 12px; }
+    .preview-short > table > tbody > tr:first-child { display: none; }
+
+    .welcome { margin: 0 0 20px; padding: 12px 14px; background: var(--surface); border-left: 4px solid var(--yellow); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13.5px; }
+    .welcome strong { display: block; margin-bottom: 2px; }
+
+    .save {
+      width: 100%; height: 42px; margin-top: 20px; border: 0; border-radius: var(--radius);
+      background: var(--primary); color: var(--primary-text); font: 700 14px Roboto, "Segoe UI", Arial, sans-serif; cursor: pointer; transition: background .15s;
+    }
+    .save:hover { background: var(--primary-hover); }
+    .save:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+    .save:disabled { background: var(--surface); color: var(--muted); cursor: default; }
+
+    .feature { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .feature:last-child { border-bottom: 0; }
+    .feature-text { flex: 1; min-width: 0; }
+    .feature-name { display: block; margin: 0; font-weight: 700; font-size: 14px; cursor: pointer; }
+    .feature-how { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+    code { font: 700 12px Roboto, Arial, sans-serif; color: var(--text); background: var(--surface); padding: 0 4px; border-radius: 3px; }
+
+    .switch {
+      appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 36px; height: 20px; margin: 2px 0 0; padding: 0;
+      border: 0; border-radius: 10px; background: var(--switch-off); cursor: pointer; transition: background .15s;
+    }
+    .switch::after {
+      content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%;
+      background: #ffffff; transition: transform .15s;
+    }
+    .switch:checked { background: var(--switch-on); }
+    .switch:checked::after { transform: translateX(16px); background: var(--switch-knob); }
+    .switch:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+    .example { margin-top: 6px; }
+    .example summary {
+      display: inline-flex; align-items: center; gap: 4px; list-style: none; cursor: pointer;
+      font-size: 12.5px; font-weight: 700; color: var(--text); border-radius: 3px;
+    }
+    .example summary::-webkit-details-marker { display: none; }
+    .example summary::after { content: ""; width: 6px; height: 6px; margin: -3px 0 0 3px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform .15s; }
+    .example[open] summary::after { margin-top: 3px; transform: rotate(-135deg); }
+    .example summary:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+    .example-step { display: block; margin: 10px 0 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .typed { padding: 8px 10px; background: var(--surface); border-radius: var(--radius); font: 13px/1.5 Aptos, "Segoe UI", Calibri, sans-serif; color: var(--text); }
+    .typed a { color: inherit; }
+    .example .paper { padding: 4px 12px; }
+
+    .tips { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+    .tips li { margin: 8px 0; }
+    .about { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+    .about a { color: var(--text); font-weight: 700; }
+
+    .toast {
+      position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 3; padding: 10px 14px; border-radius: 8px;
+      background: var(--toast); color: var(--toast-text); font-size: 13px; box-shadow: 0 4px 16px rgba(0, 0, 0, .18);
+      opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .16s, transform .16s;
+    }
+    .toast[data-show="true"] { opacity: 1; transform: none; }
+    .toast[data-tone="error"] { border-left: 4px solid #c62828; }
+    @media (prefers-reduced-motion: reduce) {
+      .toast, .switch, .switch::after, .example summary::after, .save { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <header class="band">
+      <img src="assets/vstx-horizontal-light.png" alt="Versatex" />
+      <span class="active-pill" title="Styling runs on every email you send"><span class="marker" aria-hidden="true">&#11042;</span><span id="version">Active</span></span>
+    </header>
+    <nav class="tabs" role="tablist" aria-label="Settings">
+      <button class="tab" type="button" role="tab" id="tab-signature" aria-controls="panel-signature" aria-selected="true">Signature</button>
+      <button class="tab" type="button" role="tab" id="tab-formatting" aria-controls="panel-formatting" aria-selected="false" tabindex="-1">Formatting</button>
+      <button class="tab" type="button" role="tab" id="tab-help" aria-controls="panel-help" aria-selected="false" tabindex="-1">Help</button>
+    </nav>
+  </div>
+
+  <main>
+    <section role="tabpanel" id="panel-signature" aria-labelledby="tab-signature">
+      <div class="welcome" id="welcome" hidden>
+        <strong>Welcome to Versatex Email Style.</strong>
+        Check your name, add your title and phone, then select Save. Every email you send after that carries your signature.
+      </div>
+
+      <h1>Your email signature</h1>
+      <p class="lead">Added to every email and invite the add-in styles. Leave the title or phone empty to hide that line.</p>
+
+      <form id="signature-form" novalidate>
+        <label class="field-label" for="name">Name</label>
+        <input id="name" name="name" maxlength="60" autocomplete="name" required />
+
+        <label class="field-label" for="title">Title</label>
+        <input id="title" name="title" maxlength="80" autocomplete="organization-title" />
+
+        <label class="field-label" for="phone">Phone</label>
+        <input id="phone" name="phone" maxlength="40" autocomplete="tel" inputmode="tel" />
+
+        <span class="field-label">New emails</span>
+        <div class="paper" id="preview-frame"><div class="preview-scale" id="preview"></div></div>
+
+        <span class="field-label">Replies in a thread you've already signed</span>
+        <div class="paper preview-short" id="preview-short"></div>
+
+        <button class="save" type="submit" id="save">Save signature</button>
+      </form>
+
+      <div class="feature">
+        <input class="switch" type="checkbox" role="switch" id="shortReplies" aria-describedby="shortReplies-how" />
+        <div class="feature-text">
+          <label class="feature-name" id="shortReplies-name" for="shortReplies">Short signature on replies</label>
+          <p class="feature-how" id="shortReplies-how">Your first email in a thread gets the full signature; later replies get the one-line version.</p>
+        </div>
+      </div>
+    </section>
+
+    <section role="tabpanel" id="panel-formatting" aria-labelledby="tab-formatting" hidden>
+      <h1>Smart formatting</h1>
+      <p class="lead">Type naturally. These patterns turn into designed elements when you send. Changes save as soon as you flip a switch.</p>
+
+      <div class="features">
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="headings" aria-describedby="headings-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="headings-name" for="headings">Section headings</label>
+            <p class="feature-how" id="headings-how">A short line in <b>bold</b> on its own.</p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-headings" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-headings" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="plainTitles" aria-describedby="plainTitles-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="plainTitles-name" for="plainTitles">Plain section titles</label>
+            <p class="feature-how" id="plainTitles-how">Off by default. A short line with no closing punctuation, between other text, becomes a heading too, so titles you paste don't need to be bold. Greetings and sign-offs stay as they are.</p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-plainTitles" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-plainTitles" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="callouts" aria-describedby="callouts-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="callouts-name" for="callouts">Callouts</label>
+            <p class="feature-how" id="callouts-how">Start a line with <code>Action:</code> <code>Decision:</code> <code>Deadline:</code> <code>Important:</code> <code>Ask:</code> <code>Risk:</code> <code>Note:</code> <code>FYI:</code> or <code>Next steps:</code></p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-callouts" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-callouts" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="figures" aria-describedby="figures-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="figures-name" for="figures">Key figures</label>
+            <p class="feature-how" id="figures-how">Percentages and amounts such as <code>6%</code> <code>-4%</code> <code>$1.2M</code> get a highlight.</p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-figures" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-figures" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="buttons" aria-describedby="buttons-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="buttons-name" for="buttons">Link buttons</label>
+            <p class="feature-how" id="buttons-how">Paste a link on its own line, such as a Power BI or SharePoint link.</p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-buttons" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-buttons" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="statuses" aria-describedby="statuses-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="statuses-name" for="statuses">Status tags</label>
+            <p class="feature-how" id="statuses-how"><code>[On track]</code> <code>[At risk]</code> <code>[Off track]</code> <code>[Done]</code> <code>[Blocked]</code> <code>[In progress]</code></p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-statuses" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-statuses" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="kpis" aria-describedby="kpis-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="kpis-name" for="kpis">KPI tiles</label>
+            <p class="feature-how" id="kpis-how">One line starting with <code>KPI:</code>, metrics split by <code>|</code>. Arrows show the direction; add a status tag when you want green, amber or red.</p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-kpis" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-kpis" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="mentions" aria-describedby="mentions-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="mentions-name" for="mentions">@mention name tags</label>
+            <p class="feature-how" id="mentions-how">Off by default. Type <code>@</code> and pick a colleague as usual; their name becomes a tag in most email apps (Outlook on the web shows its own mention style instead). They're still notified.</p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-mentions" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-mentions" inert></div>
+            </details>
+          </div>
+        </div>
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="agenda" aria-describedby="agenda-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="agenda-name" for="agenda">Timed agenda</label>
+            <p class="feature-how" id="agenda-how">Two or more lines in a row that start with a time.</p>
+            <details class="example">
+              <summary>Example</summary>
+              <span class="example-step">You type</span>
+              <div class="typed" id="typed-agenda" inert></div>
+              <span class="example-step">Recipients see</span>
+              <div class="paper" id="example-agenda" inert></div>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <h2>Before sending</h2>
+      <div class="features">
+        <div class="feature">
+          <input class="switch" type="checkbox" role="switch" id="attachmentCheck" aria-describedby="attachmentCheck-how" />
+          <div class="feature-text">
+            <label class="feature-name" id="attachmentCheck-name" for="attachmentCheck">Attachment reminder</label>
+            <p class="feature-how" id="attachmentCheck-how">If your email says "attached" but nothing is, Send asks first. A shared SharePoint or OneDrive link counts as attached.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section role="tabpanel" id="panel-help" aria-labelledby="tab-help" hidden>
+      <h1>How it works</h1>
+      <p class="lead">Write as usual. When you select Send, the add-in restyles your part of the email in the Versatex look; earlier messages in a thread are left alone. Every word you wrote arrives: if styling would drop one, the email goes with basic styling instead.</p>
+
+      <h2>Subject tags</h2>
+      <ul class="tips">
+        <li><code>[review]</code> pauses once so you can check the styled email, then sends with a clean subject.</li>
+        <li><code>[plain]</code> sends the email exactly as typed.</li>
+      </ul>
+
+      <h2>Tips</h2>
+      <ul class="tips">
+        <li>Select <b>Apply Versatex style</b> in the message toolbar to style the draft now and check it before you send.</li>
+        <li>Your own colours, sizes and code keep their look; only Outlook's default text is restyled.</li>
+        <li>Pasting from Word, Teams or a document is fine: lists keep their shape.</li>
+        <li>Emails written in the Outlook phone app go out unstyled; they look fine when read on a phone.</li>
+      </ul>
+
+      <p class="about">Versatex Email Style &middot; <span id="about-version">current version</span> &middot; <a href="install.html" target="_blank" rel="noopener">Install guide for colleagues</a></p>
+    </section>
+  </main>
+
+  <div class="toast" id="status" role="status" aria-live="polite"></div>
+
+  <script type="text/javascript">
+    Office.onReady(function () {
+      var byId = function (id) { return document.getElementById(id); };
+      var TABS = ["signature", "formatting", "help"];
+      var PREVIEW_WIDTH = 360;
+      var TOAST_MS = 2600;
+      var form = byId("signature-form");
+      var fields = ["name", "title", "phone"].map(byId);
+      var preview = byId("preview");
+      var previewFrame = byId("preview-frame");
+      var shortPreview = byId("preview-short");
+      var save = byId("save");
+      var status = byId("status");
+      var welcome = byId("welcome");
+      var switches = Object.keys(FEATURE_DEFAULTS).map(byId);
+
+      // ---- Theme: follow Outlook's dark mode where Outlook reports it, otherwise the system setting (CSS) ----
+      function isDarkColor(hex) {
+        var rgb = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+        if (!rgb) return null;
+        return 0.299 * parseInt(rgb[1], 16) + 0.587 * parseInt(rgb[2], 16) + 0.114 * parseInt(rgb[3], 16) < 128;
+      }
+
+      function outlookTheme() {
+        try {
+          return Office.context.officeTheme || null;
+        } catch (unsupported) {
+          return null;
+        }
+      }
+
+      function applyOutlookTheme() {
+        var theme = outlookTheme();
+        if (!theme) return;
+        var dark = typeof theme.isDarkTheme === "boolean" ? theme.isDarkTheme : isDarkColor(theme.bodyBackgroundColor);
+        if (dark !== null) document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      }
+
+      applyOutlookTheme();
+      var mailbox = Office.context.mailbox;
+      if (mailbox && mailbox.addHandlerAsync && Office.EventType && Office.EventType.OfficeThemeChanged) {
+        mailbox.addHandlerAsync(Office.EventType.OfficeThemeChanged, applyOutlookTheme);
+      }
+
+      // ---- Version label, from the cache-busting number on the engine script ----
+      var version = /[?&]v=(\d+)/.exec(byId("engine").src || "");
+      if (version) {
+        byId("version").textContent = "Active · v" + version[1];
+        byId("about-version").textContent = "v" + version[1];
+      }
+
+      // ---- Tabs ----
+      function selectTab(name, focus) {
+        TABS.forEach(function (tab) {
+          var button = byId("tab-" + tab);
+          var selected = tab === name;
+          button.setAttribute("aria-selected", String(selected));
+          button.tabIndex = selected ? 0 : -1;
+          byId("panel-" + tab).hidden = !selected;
+          if (selected && focus) button.focus();
+        });
+        if (name === "signature") fitPreview();
+      }
+
+      TABS.forEach(function (tab, index) {
+        var button = byId("tab-" + tab);
+        button.addEventListener("click", function () {
+          selectTab(tab, false);
+        });
+        button.addEventListener("keydown", function (event) {
+          var moves = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 };
+          if (!Object.prototype.hasOwnProperty.call(moves, event.key)) return;
+          event.preventDefault();
+          selectTab(TABS[(moves[event.key] + TABS.length) % TABS.length], true);
+        });
+      });
+
+      // ---- Saving: one save at a time; a change made mid-save is saved right after ----
+      var toastTimer = null;
+      var saving = false;
+      var queued = null;
+
+      function announce(message, failed) {
+        status.textContent = message;
+        status.setAttribute("data-tone", failed ? "error" : "ok");
+        status.setAttribute("data-show", "true");
+        clearTimeout(toastTimer);
+        if (!failed) {
+          toastTimer = setTimeout(function () {
+            status.setAttribute("data-show", "false");
+          }, TOAST_MS);
+        }
+      }
+
+      function persist(message, onSaved) {
+        if (saving) {
+          var earlier = queued && queued.onSaved;
+          queued = {
+            message: message,
+            onSaved: earlier && onSaved ? function () { earlier(); onSaved(); } : onSaved || earlier,
+          };
+          return;
+        }
+        saving = true;
+        Office.context.roamingSettings.saveAsync(function (result) {
+          saving = false;
+          if (result.status === Office.AsyncResultStatus.Succeeded) {
+            announce(message, false);
+            if (onSaved) onSaved();
+          } else {
+            announce("Couldn't save: " + (result.error && result.error.message ? result.error.message : "please try again."), true);
+          }
+          if (queued) {
+            var next = queued;
+            queued = null;
+            persist(next.message, next.onSaved);
+          }
+        });
+      }
+
+      // ---- Signature ----
+      function current() {
+        return { name: fields[0].value.trim(), title: fields[1].value.trim(), phone: fields[2].value.trim() };
+      }
+
+      // The preview is drawn at phone width and scaled to the pane, so it wraps the way recipients see it.
+      function fitPreview() {
+        var available = previewFrame.clientWidth;
+        if (!available) return;
+        var width = Math.max(PREVIEW_WIDTH, available);
+        preview.style.width = width + "px";
+        preview.style.zoom = String(available / width);
+      }
+
+      function render() {
+        var details = current();
+        var shown = { name: details.name || signatureDefaults().name, title: details.title, phone: details.phone };
+        preview.innerHTML = signatureHtml(shown);
+        shortPreview.innerHTML = shortSignatureHtml(shown);
+        save.disabled = !details.name;
+        fitPreview();
+      }
+
+      welcome.hidden = isSignatureSetUp();
+      var saved = signatureDetails();
+      fields[0].value = saved.name;
+      fields[1].value = saved.title;
+      fields[2].value = saved.phone;
+      render();
+      window.addEventListener("resize", fitPreview);
+
+      fields.forEach(function (field) {
+        field.addEventListener("input", render);
+      });
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        if (!current().name) return;
+        Office.context.roamingSettings.set(SIGNATURE_SETTINGS_KEY, current());
+        persist("Signature saved. Your next email uses it.", function () {
+          welcome.hidden = true;
+        });
+      });
+
+      // ---- Switches save as soon as they're flipped ----
+      function currentFeatures() {
+        var features = {};
+        switches.forEach(function (toggle) {
+          features[toggle.id] = toggle.checked;
+        });
+        return features;
+      }
+
+      var features = featureSettings();
+      switches.forEach(function (toggle) {
+        toggle.checked = features[toggle.id];
+        toggle.addEventListener("change", function () {
+          Office.context.roamingSettings.set(FEATURES_SETTINGS_KEY, currentFeatures());
+          var name = byId(toggle.id + "-name").textContent.trim();
+          persist(name + (toggle.checked ? " on." : " off.") + " Saved for your next email.");
+        });
+      });
+
+      // ---- Live examples, drawn by the same code that styles your emails ----
+      function only(key) {
+        return function (html) {
+          var features = {};
+          features[key] = true;
+          return smartBlocks(html, features);
+        };
+      }
+
+      var EXAMPLES = {
+        headings: { lines: ["<b>Where we are</b>"], style: only("headings") },
+        plainTitles: { lines: ["Here is how to set it up.", "What you need", "Windows and Claude Code."], style: only("plainTitles") },
+        callouts: { lines: ["Decision: we keep the weekly refresh.", "Note: figures are preliminary."], style: only("callouts") },
+        figures: { lines: ["Revenue is $1.2M, up 6% on plan."], style: markKeyFigures },
+        buttons: { lines: ['<a href="https://app.powerbi.com/groups/me/reports/q3">https://app.powerbi.com/groups/me/reports/q3</a>'], style: only("buttons") },
+        statuses: { lines: ["Vendor data feed [At risk]", "SSO for the portal [Done]"], style: markStatuses },
+        kpis: { lines: ["KPI: Spend $4.1M -8% [On track] | Margin 18%"], style: only("kpis") },
+        mentions: { lines: ['<a href="mailto:alex@example.com" id="OWAAM1">@Alex Morgan</a> can you check the totals?'], style: markMentions },
+        agenda: { lines: ["10:00 Welcome", "10:15-10:45 Q3 review"], style: withAgenda },
+      };
+
+      Object.keys(EXAMPLES).forEach(function (key) {
+        var example = EXAMPLES[key];
+        var typed = example.lines.map(function (line) {
+          return "<div>" + line + "</div>";
+        }).join("");
+        byId("typed-" + key).innerHTML = typed;
+        byId("example-" + key).innerHTML = example.style(brandText(typed));
+      });
+    });
+  </script>
+</body>
+</html>
