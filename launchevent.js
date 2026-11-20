@@ -141,7 +141,8 @@ function withStyle(name, attrs, declarations, overrides) {
     })
     .join(";");
   var otherAttrs = (attrs || "").replace(STYLE_ATTR, "").replace(/\s{2,}/g, " ").replace(/\s+$/, "");
-  return "<" + name + otherAttrs + ' style="' + style + '">';
+  // Word quotes font names with " inside single-quoted styles; inside style="…" they must become '.
+  return "<" + name + otherAttrs + ' style="' + style.replace(/"/g, "'") + '">';
 }
 
 function mergeStyle(tag, name, attrs, css) {
@@ -159,10 +160,13 @@ function scanTextTags(html, visit) {
     name = name.toLowerCase();
     if (name === "table") {
       if (closing) {
-        if (tables.pop()) foreignTables--;
+        var table = tables.pop();
+        if (table && table.foreign) foreignTables--;
       } else {
         var foreign = attrs.indexOf(VSTX_LIST_CLASS) === -1 && attrs.indexOf(VSTX_TABLE_CLASS) === -1;
-        tables.push(foreign);
+        // Lists, buttons and other tables the add-in builds (a branded data table is still the sender's).
+        var built = OWN_MARKUP.test(attrs) && attrs.indexOf(VSTX_TABLE_CLASS) === -1;
+        tables.push({ foreign: foreign, built: built });
         if (foreign) foreignTables++;
       }
       return tag;
@@ -174,7 +178,8 @@ function scanTextTags(html, visit) {
     var inCode = MONOSPACE.test(attrs) || codeContext[codeContext.length - 1] === true;
     codeContext.push(inCode);
     if (/WordSection/i.test(attrs) || OWN_MARKUP.test(attrs)) return tag;
-    return visit(tag, name, attrs, foreignTables > 0, inCode);
+    var cellOfBuiltTable = /^t[dh]$/.test(name) && tables.length > 0 && tables[tables.length - 1].built;
+    return visit(tag, name, attrs, foreignTables > 0, inCode, cellOfBuiltTable);
   });
 }
 
@@ -195,12 +200,16 @@ function defaultLook(html) {
   return look;
 }
 
+// The add-in draws its hexagons and arrows in this font; restyling an email again must leave them in it.
+var SYMBOL_FONT = /segoe ui symbol/i;
+
 // Code keeps its font and size, but Outlook's default colour still becomes brand ink.
 function brandText(html) {
   var look = defaultLook(html);
-  return scanTextTags(html, function (tag, name, attrs, inForeignTable, inCode) {
+  return scanTextTags(html, function (tag, name, attrs, inForeignTable, inCode, cellOfBuiltTable) {
     var declarations = parseDeclarations(readStyle(attrs));
-    var overrides = inCode ? [] : [["font-family", FONT_STACK]];
+    var keepsFont = inCode || cellOfBuiltTable || SYMBOL_FONT.test(valueOf(declarations, "font-family") || "");
+    var overrides = keepsFont ? [] : [["font-family", FONT_STACK]];
     if (!inForeignTable) {
       var isBlock = BLOCK_TAGS.test(name);
       var color = comparable(valueOf(declarations, "color"));
@@ -211,7 +220,11 @@ function brandText(html) {
         if (isBlock) overrides.push(["line-height", BODY_LINE_HEIGHT]);
       }
     }
-    return overrides.length ? withStyle(name, attrs, declarations, overrides) : tag;
+    // A tag that already has the look stays exactly as it is, so styling an email twice changes nothing.
+    var changes = overrides.filter(function (override) {
+      return comparable(valueOf(declarations, override[0])) !== comparable(override[1]);
+    });
+    return changes.length ? withStyle(name, attrs, declarations, overrides) : tag;
   });
 }
 
@@ -295,25 +308,63 @@ function featureSettings() {
   return features;
 }
 
+// Character references that pasted or Word-made text can carry. Accented letters (&eacute; and the like) are built
+// from a letter and its mark, so headings, tiles and buttons rebuilt from text never show a reference literally.
+var NAMED_CHARACTERS = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  lsquo: "‘", rsquo: "’", sbquo: "‚", ldquo: "“", rdquo: "”", bdquo: "„", ndash: "–", mdash: "—", hellip: "…",
+  bull: "•", middot: "·", laquo: "«", raquo: "»", copy: "©", reg: "®", trade: "™", euro: "€", pound: "£", yen: "¥",
+  cent: "¢", deg: "°", plusmn: "±", times: "×", divide: "÷", frac12: "½", frac14: "¼", frac34: "¾", sect: "§", para: "¶",
+  szlig: "ß", aelig: "æ", AElig: "Æ", oslash: "ø", Oslash: "Ø", eth: "ð", ETH: "Ð", thorn: "þ", THORN: "Þ", iexcl: "¡", iquest: "¿",
+};
+var ACCENT_MARKS = { acute: "́", grave: "̀", circ: "̂", uml: "̈", tilde: "̃", ring: "̊", cedil: "̧" };
+
+function decodeCharacter(reference, name) {
+  var number = /^#(x?)([0-9a-f]+)$/i.exec(name);
+  if (number) {
+    var point = parseInt(number[2], number[1] ? 16 : 10);
+    if (point === 160) return " ";
+    return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : reference;
+  }
+  if (Object.prototype.hasOwnProperty.call(NAMED_CHARACTERS, name)) return NAMED_CHARACTERS[name];
+  var accented = /^([a-z])(acute|grave|circ|uml|tilde|ring|cedil)$/i.exec(name);
+  return accented ? (accented[1] + ACCENT_MARKS[accented[2]]).normalize("NFC") : reference;
+}
+
 function plainText(html) {
   return html
     .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;|&#160;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
+    .replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]*);/gi, decodeCharacter)
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// Tag positions are worked out once per email rather than once per block: rescanning from the top for every block
+// made Send slow down with the square of the email's size.
+var structureIndex = { html: null, offsets: [], depths: [] };
+
 function insideStructure(html, offset) {
-  var tags = /<(\/?)(ul|ol|table)\b/gi;
-  var depth = 0;
-  var match;
-  while ((match = tags.exec(html)) && match.index < offset) depth += match[1] ? -1 : 1;
-  return depth > 0;
+  if (structureIndex.html !== html) {
+    var tags = /<(\/?)(ul|ol|table)\b/gi;
+    var offsets = [];
+    var depths = [];
+    var depth = 0;
+    var match;
+    while ((match = tags.exec(html))) {
+      depth += match[1] ? -1 : 1;
+      offsets.push(match.index);
+      depths.push(depth);
+    }
+    structureIndex = { html: html, offsets: offsets, depths: depths };
+  }
+  var low = 0;
+  var high = structureIndex.offsets.length;
+  while (low < high) {
+    var middle = (low + high) >> 1;
+    if (structureIndex.offsets[middle] < offset) low = middle + 1;
+    else high = middle;
+  }
+  return low > 0 && structureIndex.depths[low - 1] > 0;
 }
 
 // Classic Outlook (Word) gives an empty cell a full line of height unless its font size and line height match the cell.
@@ -328,7 +379,7 @@ function ruleCell(height, color, attrs) {
 
 function yellowRule(width, height) {
   return (
-    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>' +
+    '<table class="vstx-rule" role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>' +
     ruleCell(height, YELLOW, ' width="' + width + '"').replace('style="', 'style="width:' + width + "px;") +
     "</tr></table>"
   );
@@ -339,8 +390,13 @@ function spaced(margin, html) {
   return '<div class="vstx-space" style="margin:' + margin + '">' + html + "</div>";
 }
 
+// Headings and KPI tiles are rebuilt from a line's text alone, so a line holding links, @mentions, pictures,
+// lists or tables keeps its own markup instead.
+var KEEPS_ITS_MARKUP = /<(?:a|img|ul|ol|li|table|td|th)\b/i;
+
 // A short line that is entirely bold, on its own, reads as a section heading.
 function asHeading(attrs, inner, text) {
+  if (KEEPS_ITS_MARKUP.test(inner)) return null;
   if (text.length < 2 || text.length > 70 || /[.!?,;]$/.test(text) || NOT_HEADINGS.test(text) || !/[a-z]/i.test(text)) return null;
   if (/<br\b/i.test(inner.replace(/(?:\s|<br\b[^>]*>)+$/i, ""))) return null;
   var wholeBlockBold = BOLD_STYLE.test(attrs);
@@ -369,7 +425,7 @@ function visibleText(html) {
 function asPlainTitle(inner, text, whole, start, end) {
   if (text.length < 3 || text.length > PLAIN_TITLE_MAX_LENGTH || text.split(/\s+/).length > PLAIN_TITLE_MAX_WORDS) return null;
   if (!/^[A-ZÀ-ÖØ-Þ]/.test(text) || /[.!?,;:]$/.test(text) || NOT_HEADINGS.test(text) || NOT_PLAIN_TITLES.test(text)) return null;
-  if (/<(?:a|img)\b/i.test(inner) || /<br\b/i.test(inner.replace(/(?:\s|<br\b[^>]*>)+$/i, ""))) return null;
+  if (KEEPS_ITS_MARKUP.test(inner) || /<br\b/i.test(inner.replace(/(?:\s|<br\b[^>]*>)+$/i, ""))) return null;
   if (!visibleText(whole.slice(0, start)) || !visibleText(whole.slice(end))) return null;
   return headingHtml(text);
 }
@@ -520,16 +576,28 @@ function smartLinkLabel(href, host) {
   return "Open link";
 }
 
+// Link text that names a site (with or without https://, zero-width characters ignored) gets a neutral label unless
+// it names the site the link really opens: a button must never show one site and open another.
+function looksLikeAddress(text, host) {
+  var clean = text.replace(/[​-‏⁠﻿]/g, "");
+  if (/https?\s*:\s*\/\/|www\./i.test(clean)) return true;
+  var named = /(?:^|[^\w.-])((?:[a-z0-9-]+\.)+[a-z]{2,})(?=$|[^\w.-])/i.exec(clean);
+  if (!named) return false;
+  var site = named[1].toLowerCase().replace(/^www\./, "");
+  return site !== host && host.slice(-(site.length + 1)) !== "." + site;
+}
+
 // A link alone on its own line becomes a button, with the website shown underneath so people know where it goes.
+// Exactly one link and no picture: anything more would be lost from the button.
 function asButton(inner) {
   var match = LONE_LINK.exec(inner);
-  if (!match) return null;
+  if (!match || (inner.match(/<a\b/gi) || []).length !== 1 || /<img\b/i.test(inner)) return null;
   var hrefMatch = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(match[2]);
   var href = hrefMatch ? hrefMatch[1] || hrefMatch[2] : "";
   var linkText = plainText(match[3]);
   var host = hostOf(href);
   if (!host || !linkText) return null;
-  var label = /^(https?:\/\/|www\.)/i.test(linkText) ? smartLinkLabel(href, host) : linkText;
+  var label = looksLikeAddress(linkText, host) ? smartLinkLabel(href, host) : linkText;
   var text = "font-family:" + FONT_STACK + ";";
   return spaced(
     COMPONENT_MARGIN,
@@ -548,7 +616,7 @@ function smartBlocks(html, features) {
     if (!text) return block;
     return (
       (features.buttons && asButton(inner)) ||
-      (features.kpis && asKpiRow(text)) ||
+      (features.kpis && !KEEPS_ITS_MARKUP.test(inner) && asKpiRow(text)) ||
       (features.callouts && asCallout(inner, text)) ||
       (features.headings && asHeading(attrs, inner, text)) ||
       (features.plainTitles && asPlainTitle(inner, text, whole, offset, offset + block.length)) ||
@@ -751,7 +819,7 @@ function hexagonCell(color) {
 
 function numberBadge(number) {
   return (
-    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>' +
+    '<table class="vstx-badge" role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>' +
     '<td width="' + BADGE_SIZE + '" height="' + BADGE_SIZE + '" align="center" bgcolor="' + YELLOW + '" style="' + BADGE_CSS + '">' +
     '<span style="font-family:' + FONT_STACK + ";font-size:12px;font-weight:" + STRONG_WEIGHT + ";color:" + INK + '">' + number + "</span></td>" +
     "</tr></table>"
@@ -1069,7 +1137,11 @@ function profileName() {
   if (!profile) return "";
   var display = (profile.displayName || "").trim();
   var lastFirst = /^([^,]+),\s*(.+)$/.exec(display);
-  if (lastFirst) return lastFirst[2] + " " + lastFirst[1];
+  if (lastFirst) {
+    // "Reyes, Jordan (Contractor)" or "Reyes, Jordan - Finance": the note stays after the full name.
+    var given = /^(.*?)(\s+(?:\(.*|[-–—|].*))?$/.exec(lastFirst[2]);
+    return given[1] + " " + lastFirst[1] + (given[2] || "");
+  }
   return display || (profile.emailAddress || "").split("@")[0];
 }
 
@@ -1155,15 +1227,20 @@ function insertAfterBodyTag(html, fragment) {
   return html.slice(0, at) + fragment + html.slice(at);
 }
 
+// Only this email's own frame counts: a styled email pasted in from elsewhere carries x_-prefixed ids, and the
+// words "vstx-signature" typed as text are just text.
+var SIGNATURE_TABLE = /<table\b[^>]*\bid=["']?vstx-signature["'\s>]/i;
+var BAR_TABLE = /<table\b[^>]*\bid=["']?vstx-bar["'\s>]/i;
+
 function signatureStart(ownPart) {
-  var at = ownPart.indexOf(VSTX_SIGNATURE_ID);
-  return at === -1 ? -1 : ownPart.lastIndexOf("<table", at);
+  var match = SIGNATURE_TABLE.exec(ownPart);
+  return match ? match.index : -1;
 }
 
 function textStart(ownPart) {
-  var at = ownPart.indexOf(VSTX_BAR_ID);
-  if (at !== -1) {
-    var barClose = ownPart.indexOf("</table>", at);
+  var bar = BAR_TABLE.exec(ownPart);
+  if (bar) {
+    var barClose = ownPart.indexOf("</table>", bar.index);
     if (barClose !== -1) return barClose + "</table>".length;
   }
   var bodyTag = /<body[^>]*>/i.exec(ownPart);
@@ -1200,8 +1277,8 @@ function applyVersatexStyle(html) {
 function callAsync(invoke) {
   return new Promise(function (resolve, reject) {
     invoke(function (result) {
-      if (result.status === Office.AsyncResultStatus.Succeeded) resolve(result.value);
-      else reject(result.error);
+      if (result && result.status === Office.AsyncResultStatus.Succeeded) resolve(result.value);
+      else reject(result ? result.error : undefined);
     });
   });
 }
@@ -1228,7 +1305,8 @@ function restyleCurrentItem() {
 }
 
 function describeError(error) {
-  return error && error.message ? error.message : String(error);
+  if (error && error.message) return error.message;
+  return error ? String(error) : "Outlook didn't give a reason.";
 }
 
 function canOfferSendAnyway() {
@@ -1255,7 +1333,7 @@ function mentionsMissingAttachment(item) {
           return { words: quoteAt === -1 ? content : content.slice(0, quoteAt), sharedLink: false };
         }
         var own = content.slice(0, findQuoteStart(content));
-        return { words: plainText(own), sharedLink: SHARED_FILE_LINK.test(own) };
+        return { words: visibleText(own), sharedLink: SHARED_FILE_LINK.test(own) };
       });
     })
     .then(function (own) {
@@ -1279,6 +1357,13 @@ function withoutControlTags(subject) {
 function onMessageSendHandler(event) {
   var item = Office.context.mailbox.item;
   var subject = "";
+  // Outlook must hear back exactly once, even if reporting the outcome itself throws.
+  var finished = false;
+  var complete = function (outcome) {
+    if (finished) return;
+    finished = true;
+    event.completed(outcome);
+  };
   callAsync(function (done) {
     item.subject.getAsync(done);
   })
@@ -1309,7 +1394,7 @@ function onMessageSendHandler(event) {
     })
     .then(function (outcome) {
       if (outcome.missingAttachment) {
-        event.completed({
+        complete({
           allowEvent: false,
           errorMessage: "Your email mentions an attachment, but nothing is attached. Select Don't send to add it, or send it as it is.",
           sendModeOverride: Office.MailboxEnums.SendModeOverride.PromptUser,
@@ -1318,20 +1403,27 @@ function onMessageSendHandler(event) {
       }
       var wantsReview = outcome.status === "styled" && REVIEW_TAG.test(subject);
       if (!wantsReview) {
-        event.completed({ allowEvent: true });
+        complete({ allowEvent: true });
         return;
       }
-      event.completed({
+      complete({
         allowEvent: false,
         errorMessage: "Versatex style applied. Check how the email looks, then select Send again.",
       });
     })
     .catch(function (error) {
-      if (!canOfferSendAnyway()) {
-        event.completed({ allowEvent: true });
+      var offersSendAnyway = false;
+      try {
+        offersSendAnyway = canOfferSendAnyway();
+      } catch (requirementError) {
+        // Without a way to ask, the email goes out as it is rather than being held.
+        offersSendAnyway = false;
+      }
+      if (!offersSendAnyway) {
+        complete({ allowEvent: true });
         return;
       }
-      event.completed({
+      complete({
         allowEvent: false,
         errorMessage: "Couldn't apply the Versatex style to this email: " + describeError(error),
         sendModeOverride: Office.MailboxEnums.SendModeOverride.PromptUser,
@@ -1343,19 +1435,22 @@ var SETTINGS_BUTTON = { message: "vstxSettingsButton", appointment: "vstxMeeting
 
 // First use: until someone saves their details, each new email offers a one-click way to the settings pane.
 function onNewComposeHandler(event) {
-  if (isSignatureSetUp() || !Office.context.requirements.isSetSupported("Mailbox", "1.10")) {
-    event.completed();
-    return;
-  }
-  var item = Office.context.mailbox.item;
-  var isInvite = item.itemType === Office.MailboxEnums.ItemType.Appointment;
+  var finished = false;
   var done = function () {
+    if (finished) return;
+    finished = true;
     event.completed();
   };
   try {
+    if (isSignatureSetUp() || !Office.context.requirements.isSetSupported("Mailbox", "1.10")) {
+      done();
+      return;
+    }
+    var item = Office.context.mailbox.item;
+    var isInvite = item.itemType === Office.MailboxEnums.ItemType.Appointment;
     showSetupPrompt(item, isInvite ? SETTINGS_BUTTON.appointment : SETTINGS_BUTTON.message, done);
   } catch (error) {
-    // A prompt Outlook rejects is skipped; the email itself is unaffected.
+    // A prompt Outlook rejects, or settings it can't read, are skipped; the email itself is unaffected.
     done();
   }
 }
