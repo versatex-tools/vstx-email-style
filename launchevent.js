@@ -1244,6 +1244,134 @@ function styledEarlierInThisDraft(ownPart) {
   return !visibleText(before) && !/<img\b/i.test(before);
 }
 
+// ---- A later pass in a draft Outlook's note says was styled ----
+
+// Outlook rewrites the markup each time the body is set, so the frame alone can't say whose it is. A note kept on the
+// draft can: with it, the frame is this email's own wherever it sits, nothing gets a second one, and only what was
+// added since is styled. Without the note (older Outlook, or the note can't be read) a later pass falls back to
+// styledEarlierInThisDraft.
+var ANY_BAR_TABLE = /<table\b[^>]*\bid=["']?(?:x_)*vstx-bar["'\s>]/i;
+var ANY_SIGNATURE_TABLE = /<table\b[^>]*\bid=["']?(?:x_)*vstx-signature["'\s>]/i;
+var MARKUP_TOKEN = /<!--[\s\S]*?-->|<(\/?)([a-z][a-z0-9:]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+
+function colourPattern(hex) {
+  var value = parseInt(hex.slice(1), 16);
+  return hex + "|rgb\\(\\s*" + (value >> 16) + ",\\s*" + ((value >> 8) & 255) + ",\\s*" + (value & 255) + "\\s*\\)";
+}
+
+// Every block the add-in styles carries its font or one of its colours in its markup, before and after Outlook's
+// rewrite, or a hexagon bullet.
+var OWN_LOOK = new RegExp(
+  [FONT_STACK.split(",")[0], "vstx-"].concat([INK, YELLOW, HAIRLINE, FIGURE_HIGHLIGHT].map(colourPattern)).join("|"),
+  "i"
+);
+
+function hasOwnLook(part) {
+  return OWN_LOOK.test((part.match(/<[^>]*>/g) || []).join(" ")) || HEXAGON_BULLET.test(part);
+}
+
+// The body's top-level elements and the text between them, in order. Null unless every tag closes where it should,
+// so a later pass never moves half an element.
+function topLevelParts(html) {
+  var tokens = new RegExp(MARKUP_TOKEN.source, "gi");
+  var parts = [];
+  var open = [];
+  var from = 0;
+  var token;
+  while ((token = tokens.exec(html))) {
+    var name = (token[2] || "").toLowerCase();
+    if (!name || VOID_TAGS.test(name) || /\/>$/.test(token[0])) continue;
+    if (!token[1]) {
+      if (!open.length && token.index > from) {
+        parts.push(html.slice(from, token.index));
+        from = token.index;
+      }
+      open.push(name);
+      continue;
+    }
+    if (open.pop() !== name) return null;
+    if (!open.length) {
+      parts.push(html.slice(from, tokens.lastIndex));
+      from = tokens.lastIndex;
+    }
+  }
+  if (open.length) return null;
+  if (from < html.length) parts.push(html.slice(from));
+  return parts;
+}
+
+function hasContent(part) {
+  return Boolean(visibleText(part)) || /<img\b/i.test(part);
+}
+
+function addedSinceStyling(part) {
+  return hasContent(part) && !hasOwnLook(part);
+}
+
+// Runs of added blocks are styled together, with any unstyled blank lines between them, so a pasted section keeps
+// its shape; blocks that already have the look are left byte for byte.
+function withAddedPartsStyled(parts) {
+  var result = [];
+  var run = [];
+  var flush = function () {
+    if (run.some(addedSinceStyling)) result.push(safeRestyle(run.join("")));
+    else result = result.concat(run);
+    run = [];
+  };
+  parts.forEach(function (part) {
+    if (hasOwnLook(part)) {
+      flush();
+      result.push(part);
+    } else {
+      run.push(part);
+    }
+  });
+  flush();
+  return result;
+}
+
+// Outlook puts a line typed at the very top of a styled draft inside the band's first cell, where it shows at 6px.
+// Returns that text as lines of its own, [] for a clean band, or null if lifting it out would lose a word.
+function linesTypedIntoBand(band) {
+  if (!hasContent(band)) return [];
+  var blocks = band.match(new RegExp(INNERMOST_BLOCK.source, "gi")) || [];
+  var lines = blocks.filter(hasContent).map(function (block) {
+    var inner = block.replace(/^<[^>]+>/, "").replace(/<\/[a-z]+>$/i, "");
+    return "<div>" + (KEEPS_ITS_MARKUP.test(inner) ? inner : escapeHtml(visibleText(inner))) + "</div>";
+  });
+  if (!lines.length) lines = ["<div>" + escapeHtml(visibleText(band)) + "</div>"];
+  return keepsWords(band, lines.join("")) ? lines : null;
+}
+
+// Only what comes before the signature is this email's own: Outlook's rewrite renames the reply and Teams markers, so
+// what follows the signature may be the quoted thread and is never touched. Text above the band, or typed into it,
+// moves just below it. Without a signature the email is left as it is. Null when the draft has no frame left at all.
+function withAdditionsStyled(ownPart) {
+  if (!ANY_BAR_TABLE.test(ownPart) && !ANY_SIGNATURE_TABLE.test(ownPart)) return null;
+  var bodyTag = /<body[^>]*>/i.exec(ownPart);
+  var from = bodyTag ? bodyTag.index + bodyTag[0].length : 0;
+  var parts = topLevelParts(ownPart.slice(from));
+  if (!parts) return ownPart;
+  var bar = -1;
+  var signature = -1;
+  parts.forEach(function (part, index) {
+    if (bar === -1 && part.search(ANY_BAR_TABLE) === 0) bar = index;
+    if (signature === -1 && part.search(ANY_SIGNATURE_TABLE) === 0) signature = index;
+  });
+  if (signature === -1 || signature < bar) return ownPart;
+  var band = bar === -1 ? [] : [parts[bar]];
+  var lifted = bar === -1 ? [] : linesTypedIntoBand(parts[bar]);
+  if (lifted === null) lifted = [];
+  else if (lifted.length) band = [brandBarHtml()];
+  var above = bar === -1 ? [] : parts.slice(0, bar);
+  var framed = above
+    .filter(function (part) {
+      return !hasContent(part);
+    })
+    .concat(band, withAddedPartsStyled(lifted.concat(above.filter(hasContent), parts.slice(bar + 1, signature))), parts.slice(signature));
+  return ownPart.slice(0, from) + framed.join("");
+}
+
 function signatureStart(ownPart) {
   var match = SIGNATURE_TABLE.exec(ownPart);
   return match ? match.index : -1;
@@ -1260,11 +1388,16 @@ function textStart(ownPart) {
 }
 
 // Returns the restyled email and whether this send added the frame (false when it only re-tidied the text).
-function styleEmail(html) {
+// draft.styledBefore: Outlook's note on this draft says the add-in styled it on an earlier pass.
+function styleEmail(html, draft) {
   var quoteStart = findQuoteStart(html);
   var ownPart = html.slice(0, quoteStart);
   var quoted = html.slice(quoteStart);
   var signatureAt = signatureStart(ownPart);
+  if (signatureAt === -1 && draft && draft.styledBefore) {
+    var tidied = withAdditionsStyled(ownPart);
+    if (tidied !== null) return { html: tidied + quoted, framed: false };
+  }
   if (signatureAt === -1 && styledEarlierInThisDraft(ownPart)) return { html: html, framed: false };
   if (signatureAt !== -1) {
     var from = Math.min(textStart(ownPart), signatureAt);
@@ -1296,6 +1429,48 @@ function callAsync(invoke) {
   });
 }
 
+// ---- Notes Outlook keeps on this one draft (Mailbox 1.11) ----
+
+var STYLED_NOTE = "vstxStyled";
+var OPENING_SUBJECT_NOTE = "vstxOpeningSubject";
+
+function draftNotes() {
+  try {
+    if (!Office.context.requirements.isSetSupported("Mailbox", "1.11")) return null;
+    return Office.context.mailbox.item.sessionData || null;
+  } catch (error) {
+    // Notes only refine a later pass; without them the add-in recognises its frame from the markup alone.
+    return null;
+  }
+}
+
+// Resolves to the note's text, or "" when there is none or Outlook can't read it.
+function readDraftNote(name) {
+  var notes = draftNotes();
+  if (!notes) return Promise.resolve("");
+  return callAsync(function (done) {
+    notes.getAsync(name, done);
+  }).then(
+    function (value) {
+      return typeof value === "string" ? value : "";
+    },
+    function () {
+      return "";
+    }
+  );
+}
+
+// Never fails: a note Outlook won't keep just means the next pass falls back to the markup alone.
+function writeDraftNote(name, value) {
+  var notes = draftNotes();
+  if (!notes) return Promise.resolve();
+  return callAsync(function (done) {
+    notes.setAsync(name, value, done);
+  }).catch(function () {
+    return undefined;
+  });
+}
+
 // Resolves to "styled" (frame added), "refreshed" (text re-tidied), "unchanged" or "plain-text".
 function restyleCurrentItem() {
   var body = Office.context.mailbox.item.body;
@@ -1303,15 +1478,21 @@ function restyleCurrentItem() {
     body.getTypeAsync(done);
   }).then(function (type) {
     if (type === Office.CoercionType.Text) return "plain-text";
-    return callAsync(function (done) {
-      body.getAsync(Office.CoercionType.Html, done);
-    }).then(function (html) {
-      var result = styleEmail(html);
-      if (result.html === html) return "unchanged";
+    return readDraftNote(STYLED_NOTE).then(function (styledNote) {
       return callAsync(function (done) {
-        body.setAsync(result.html, { coercionType: Office.CoercionType.Html }, done);
-      }).then(function () {
-        return result.framed ? "styled" : "refreshed";
+        body.getAsync(Office.CoercionType.Html, done);
+      }).then(function (html) {
+        var result = styleEmail(html, { styledBefore: Boolean(styledNote) });
+        if (result.html === html) return "unchanged";
+        return callAsync(function (done) {
+          body.setAsync(result.html, { coercionType: Office.CoercionType.Html }, done);
+        })
+          .then(function () {
+            return writeDraftNote(STYLED_NOTE, "1");
+          })
+          .then(function () {
+            return result.framed ? "styled" : "refreshed";
+          });
       });
     });
   });
@@ -1365,11 +1546,31 @@ function withoutControlTags(subject) {
   return subject.replace(CONTROL_TAGS, " ").replace(/\s{2,}/g, " ").trim();
 }
 
+function hasControlTag(text) {
+  return REVIEW_TAG.test(text) || PLAIN_TAG.test(text);
+}
+
+// A reply or forward can arrive with someone else's [review] or [plain] in the subject. Only tags you add steer the
+// add-in and are removed; once the subject as opened has been edited, every tag counts again.
+function ownSubjectTags(subject, openingSubject) {
+  var at = openingSubject ? subject.indexOf(openingSubject) : -1;
+  if (at === -1) return { typed: subject, clean: withoutControlTags(subject) };
+  var before = subject.slice(0, at);
+  var after = subject.slice(at + openingSubject.length);
+  var typed = before + " " + after;
+  if (!hasControlTag(typed)) return { typed: typed, clean: subject };
+  return {
+    typed: typed,
+    clean: [withoutControlTags(before), openingSubject, withoutControlTags(after)].filter(Boolean).join(" "),
+  };
+}
+
 // The [review] and [plain] subject tags steer the add-in and are removed before the email goes out.
 // The attachment check runs after styling, so "Send anyway" still sends the styled email.
 function onMessageSendHandler(event) {
   var item = Office.context.mailbox.item;
   var subject = "";
+  var tags = { typed: "", clean: "" };
   // Outlook must hear back exactly once, even if reporting the outcome itself throws.
   var finished = false;
   var complete = function (outcome) {
@@ -1382,13 +1583,16 @@ function onMessageSendHandler(event) {
   })
     .then(function (value) {
       subject = value || "";
-      return PLAIN_TAG.test(subject) ? "skipped" : restyleCurrentItem();
+      return readDraftNote(OPENING_SUBJECT_NOTE);
+    })
+    .then(function (openingSubject) {
+      tags = ownSubjectTags(subject, openingSubject);
+      return PLAIN_TAG.test(tags.typed) ? "skipped" : restyleCurrentItem();
     })
     .then(function (status) {
-      var cleanSubject = withoutControlTags(subject);
-      if (cleanSubject === subject) return status;
+      if (tags.clean === subject) return status;
       return callAsync(function (done) {
-        item.subject.setAsync(cleanSubject, done);
+        item.subject.setAsync(tags.clean, done);
       }).then(function () {
         return status;
       });
@@ -1414,7 +1618,7 @@ function onMessageSendHandler(event) {
         });
         return;
       }
-      var wantsReview = outcome.status === "styled" && REVIEW_TAG.test(subject);
+      var wantsReview = outcome.status === "styled" && REVIEW_TAG.test(tags.typed);
       if (!wantsReview) {
         complete({ allowEvent: true });
         return;
@@ -1446,6 +1650,20 @@ function onMessageSendHandler(event) {
 
 var SETTINGS_BUTTON = { message: "vstxSettingsButton", appointment: "vstxMeetingSettingsButton" };
 
+// Noting a subject that arrives with a tag lets Send tell someone else's tags from yours. Never fails.
+function noteOpeningSubject() {
+  return callAsync(function (done) {
+    Office.context.mailbox.item.subject.getAsync(done);
+  })
+    .then(function (subject) {
+      return subject && hasControlTag(subject) ? writeDraftNote(OPENING_SUBJECT_NOTE, subject) : undefined;
+    })
+    .catch(function () {
+      // Without the note every tag in the subject counts at Send.
+      return undefined;
+    });
+}
+
 // First use: until someone saves their details, each new email offers a one-click way to the settings pane.
 function onNewComposeHandler(event) {
   var finished = false;
@@ -1454,18 +1672,22 @@ function onNewComposeHandler(event) {
     finished = true;
     event.completed();
   };
-  try {
-    if (isSignatureSetUp() || !Office.context.requirements.isSetSupported("Mailbox", "1.10")) {
+  var offerSetup = function () {
+    try {
+      if (isSignatureSetUp() || !Office.context.requirements.isSetSupported("Mailbox", "1.10")) {
+        done();
+        return;
+      }
+      var item = Office.context.mailbox.item;
+      var isInvite = item.itemType === Office.MailboxEnums.ItemType.Appointment;
+      showSetupPrompt(item, isInvite ? SETTINGS_BUTTON.appointment : SETTINGS_BUTTON.message, done);
+    } catch (error) {
+      // A prompt Outlook rejects, or settings it can't read, are skipped; the email itself is unaffected.
       done();
-      return;
     }
-    var item = Office.context.mailbox.item;
-    var isInvite = item.itemType === Office.MailboxEnums.ItemType.Appointment;
-    showSetupPrompt(item, isInvite ? SETTINGS_BUTTON.appointment : SETTINGS_BUTTON.message, done);
-  } catch (error) {
-    // A prompt Outlook rejects, or settings it can't read, are skipped; the email itself is unaffected.
-    done();
-  }
+  };
+  if (draftNotes()) noteOpeningSubject().then(offerSetup);
+  else offerSetup();
 }
 
 function showSetupPrompt(item, commandId, done) {
