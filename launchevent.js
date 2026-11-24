@@ -1232,6 +1232,18 @@ function insertAfterBodyTag(html, fragment) {
 var SIGNATURE_TABLE = /<table\b[^>]*\bid=["']?vstx-signature["'\s>]/i;
 var BAR_TABLE = /<table\b[^>]*\bid=["']?vstx-bar["'\s>]/i;
 
+// Each time an add-in sets the body, Outlook adds "x_" to every id and drops the classes and styles that restyling
+// relies on to recognise its own work. Such a frame at the very top means this draft was styled already (Apply email
+// style, then Send), and styling it again would add a second frame and double the accents.
+var REWRITTEN_BAR_TABLE = /<table\b[^>]*\bid=["']?(?:x_)+vstx-bar["'\s>]/i;
+
+function styledEarlierInThisDraft(ownPart) {
+  var bar = REWRITTEN_BAR_TABLE.exec(ownPart);
+  if (!bar) return false;
+  var before = ownPart.slice(0, bar.index);
+  return !visibleText(before) && !/<img\b/i.test(before);
+}
+
 function signatureStart(ownPart) {
   var match = SIGNATURE_TABLE.exec(ownPart);
   return match ? match.index : -1;
@@ -1253,6 +1265,7 @@ function styleEmail(html) {
   var ownPart = html.slice(0, quoteStart);
   var quoted = html.slice(quoteStart);
   var signatureAt = signatureStart(ownPart);
+  if (signatureAt === -1 && styledEarlierInThisDraft(ownPart)) return { html: html, framed: false };
   if (signatureAt !== -1) {
     var from = Math.min(textStart(ownPart), signatureAt);
     return {
